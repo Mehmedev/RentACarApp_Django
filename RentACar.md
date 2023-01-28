@@ -100,6 +100,49 @@ class Car(models.Model):
     python manage.py migrate
     admin panele gidip car app'inin geldiğini kontrol ediyorum ve araç girişleri yapıyorum.
 
+    -----RESERVATION MODEL-----
+    Bu modelde hangi araç, hangi kullanıcı tarafından, hangi tarih aralıklarında tutulmuş, bunu göreceğim.
+26. models.py'da:
+
+    class Reservation(models.Model):
+        customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')  (Bir customerın birden fazla res olabilir. Bundan dolayı foreign key kullanıyoruz. Nerede foreing key olacak? User tablosunda. User Tablosunu da model'ın üst tarafına import ediyoruz!!!!)
+            (from django.contrib.auth.models import User)
+            (user silinirse res de silinsin dedik. Cascade kullandık!)
+
+        car = models.ForeignKey(Car, on_delete=models.CASCADE, related_name='cars') (reverse relationshipte yani Car modelinden res'e ulaşırken related name ile ulaşıyoruz. sen belirlemezsen django otomatik olarak belirler!!!)
+
+        start_date = models.DateField() (Tarih aralığı olarak tutuyorum)
+        end_date = models.DateField()
+
+        def __str__(self):
+            return f"Customer {self.customer} reserved {self.car}" (admin panelde bu şekilde görünecek)
+
+    ***admin.py'a ekliyoruz:
+        from .models import Car, Reservation
+        admin.site.register(Reservation)
+    ***
+        class Meta:    (bir user'ın aynı start ve end datelerde tek bir res. olmalı!!!aşağıdaki 3'lü uniquelik oluşturuyor)
+            constraints = [
+                models.UniqueConstraint( 
+                    fields=['customer', 'start_date', 'end_date'], name='user_rent_date' (django bu name'i istiyor, istediğin ismi verebilirsin)
+            )
+        ]
+
+    ***************************
+    eğer ikili/üçlü fieldlarda unuiqlik oluşturmak istiyorsak UniqueConstraint kullanıyoruz,
+    #? müşteri- aynı tarihler arasında başka araç kiralayamaz bu durumda,
+    #? mehmet - mercedes - 15 - 18  ilk rezervasyon
+    #? mehmet - mercedes - 18 - 19  olur 
+    #? mehmet - audi     - 15 - 18  olmaz araç farklı ama müşteri ve tarihler aynı
+    #? ayşe - mercedes  - 15 - 18  olur, müşteri farklı
+    #? mehmet - audi     - 15 - 18  olmaz çünkü araca bakmıyor
+
+    Eğer bizden hiçbir şekilde çakışma olmasın istenseydi bu işimizi görmezdi. view'de user start ve end'i süzüp ona göre kontrol edip izin vermezdik.
+    ***************************
+
+27. migrate işlemi yapıp db'de kontrol ediyoruz.
+
+
 
 
 
