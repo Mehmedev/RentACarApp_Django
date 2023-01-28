@@ -65,7 +65,7 @@ ekledik.
     # myapps
     'users',
     'car',
-23. Öncelikle car app'inin içinde models.py'a gelerek car modelimi oluşturuyorum:
+23. Öncelikle car app'inin içinde models.py'a gelerek **car modelimi** oluşturuyorum:
 
 class Car(models.Model):
     GEAR = (
@@ -100,7 +100,7 @@ class Car(models.Model):
     python manage.py migrate
     admin panele gidip car app'inin geldiğini kontrol ediyorum ve araç girişleri yapıyorum.
 
-    -----RESERVATION MODEL-----
+    **RESERVATION MODEL**
     Bu modelde hangi araç, hangi kullanıcı tarafından, hangi tarih aralıklarında tutulmuş, bunu göreceğim.
 26. models.py'da:
 
@@ -141,6 +141,104 @@ class Car(models.Model):
     ***************************
 
 27. migrate işlemi yapıp db'de kontrol ediyoruz.
+28. şimdi öncelikle yaptığım car modeli için car içerisinde **seralizer** oluşturacağım:
+
+from rest_framework import serializers
+from .models import Car, Reservation
+
+
+class CarSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Car
+        fields = (
+            'id',
+            'plate_number',
+            'brand',
+            'model',
+            'year',
+            'gear',
+            'rent_per_day',
+            'availability'
+        )
+
+29. Car serializerı için view yazıyorum:
+
+from rest_framework.viewsets import ModelViewSet
+
+from .models import Car, Reservation
+from .serializers import CarSerializer
+from .permissions import IsStaffOrReadOnly
+
+from django.db.models import Q
+
+
+class CarView(ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarSerializer
+    permission_classes = (IsStaffOrReadOnly,)  # [IsStaffOrReadOnly] (ikisi de olabilir)
+    (***car içerisinde permissions.py dosyası oluşturdum ve bu viewin altına yapıştırdığım kodları yazdım.***)
+
+    def get_queryset(self): (get isteği olduğunda döneceğimiz queryset bu. bunu conditionlara bağlıyoruz)
+        if self.request.user.is_staff:
+            queryset = super().get_queryset()
+        else:
+            queryset = super().get_queryset().filter(availability=True)
+        start = self.request.query_params.get('start')(requestin içinden gelen parametreden istediğim keyi .get ile çekerim)
+        end = self.request.query_params.get('end')
+**start ve end tarihleri arasında available olan araçları göster**
+(***endpointleri oluşturmak için car içerisinde urls.py dosyası oluşturdum ve main içine include ekledim***)
+
+**conditionları ayrı ayrı kullanabilmek için Q'yu import ettik**
+        cond1 = Q(start_date__lt=end) (lt=less than, gt=greater than)
+        cond2 = Q(end_date__gt=start)
+        # not_available = Reservation.objects.filter(
+        #     start_date__lt=end, end_date__gt=start (cond1 & cond2 ile aynı anlama geliyor)
+        # ).values_list('car_id', flat=True)  # [1, 2]
+
+        not_available = Reservation.objects.filter(
+            cond1 & cond2
+        ).values_list('car_id', flat=True)  # [1, 2] (flat_True list olarak dönmesini sağlıyor, available olmayanları döndürecek)
+        print(not_available)
+
+        queryset = queryset.exclude(id__in=not_available) (available olmayanları dahil etme)
+
+        return queryset
+
+***permissions.py***
+
+from rest_framework import permissions
+
+
+class IsStaffOrReadOnly(permissions.IsAdminUser):
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS: 
+            return True     (get, head, options gibi safe metotlardaysa herkese izin ver.)
+        return bool(request.user and request.user.is_staff)
+
+***urls.py(main)***
+
+urlpatterns = [
+    path('api/', include('car.urls'))
+]
+
+***urls.py(car)***
+from django.urls import path
+
+from rest_framework import routers
+
+from .views import CarView
+
+router = routers.DefaultRouter()
+router.register('car', CarView)
+
+urlpatterns = [  (buraya include ile de dahil edebilirdim, aşağıdaki gibi yaptım)
+]
+
+urlpatterns += router.urls
+
+
+       
 
 
 
