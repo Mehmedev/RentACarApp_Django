@@ -49,7 +49,7 @@ class CarView(ModelViewSet):
     #     if self.request.user.is_staff:
     #         return CarStaffSerializer
     #     else:
-    #         CarSerizlizer
+    #         CarSerializer
 
 
 class ReservationView(ListCreateAPIView):

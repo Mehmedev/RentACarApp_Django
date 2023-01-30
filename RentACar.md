@@ -178,13 +178,16 @@ class CarView(ModelViewSet):
     permission_classes = (IsStaffOrReadOnly,)  # [IsStaffOrReadOnly] (ikisi de olabilir)
     (***car içerisinde permissions.py dosyası oluşturdum ve bu viewin altına yapıştırdığım kodları yazdım.***)
 
-    def get_queryset(self): (get isteği olduğunda döneceğimiz queryset bu. bunu conditionlara bağlıyoruz)
+    def get_queryset(self): 
+(**get isteği olduğunda döneceğimiz queryset bu. bunu conditionlara bağlıyoruz. staff ise tüm araçları görsün, değilse sadece available olanlar görünsün**)
         if self.request.user.is_staff:
             queryset = super().get_queryset()
         else:
             queryset = super().get_queryset().filter(availability=True)
-        start = self.request.query_params.get('start')(requestin içinden gelen parametreden istediğim keyi .get ile çekerim)
-        end = self.request.query_params.get('end')
+        start = self.request.query_params.get('start')
+(**requestin içinden gelen parametreden istediğim keyi .get ile çekerim**)
+        end = self.request.query_params.get('end') 
+(**params urlden sonra ? ile gelen keyler. db'ye query, filtre atmak için query_params kullanıyoruz.**)
 **start ve end tarihleri arasında available olan araçları göster**
 (***endpointleri oluşturmak için car içerisinde urls.py dosyası oluşturdum ve main içine include ekledim***)
 
@@ -197,12 +200,26 @@ class CarView(ModelViewSet):
 
         not_available = Reservation.objects.filter(
             cond1 & cond2
-        ).values_list('car_id', flat=True)  # [1, 2] (flat_True list olarak dönmesini sağlıyor, available olmayanları döndürecek)
+        ).values_list('car_id', flat=True)  # [1, 2] 
+(**flat_True list olarak dönmesini sağlıyor, available olmayanları döndürecek**)
         print(not_available)
 
         queryset = queryset.exclude(id__in=not_available) (available olmayanları dahil etme)
 
         return queryset
+
+**BİLGİ NOTU**
+Django, filter() metodunda birçok kıyaslama operatörü sunmaktadır. Örnek olarak:
+exact: esitliği kontrol eder.
+iexact: case-insensitive esitliği kontrol eder.
+contains: bir string içinde arama yapar.
+icontains: case-insensitive bir string içinde arama yapar.
+gt: büyüklük karşılaştırması yapar.
+gte: büyüklük veya eşitlik karşılaştırması yapar.
+lt: küçüklük karşılaştırması yapar.
+lte: küçüklük veya eşitlik karşılaştırması yapar.
+in: belirli bir liste içinde arama yapar.
+**BİLGİ NOTU SON**
 
 ***permissions.py***
 
@@ -213,7 +230,7 @@ class IsStaffOrReadOnly(permissions.IsAdminUser):
 
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS: 
-            return True     (get, head, options gibi safe metotlardaysa herkese izin ver.)
+            return True     (**get, head, options gibi safe metotlardaysa herkese izin ver.**)
         return bool(request.user and request.user.is_staff)
 
 ***urls.py(main)***
@@ -237,6 +254,101 @@ urlpatterns = [  (buraya include ile de dahil edebilirdim, aşağıdaki gibi yap
 
 urlpatterns += router.urls
 
+**get_fields serializerda fieldların isimlerini döndüren bir metot. Yani fieldları istediğim gibi saklayabilirim. fieldların dönüş şeklini role bağlayabilirim. Örn user eğer normal ise şunları çıkar gibi. Her rol için ayrı serializer da yazabilirdik(staffserializer, userserializer) ama burada gerek yok. Sadece bir fieldı çıkarmak istiyorum.**
+
+**Car içerisinde Serializer.py**
+    def get_fields(self):
+        fields = super().get_fields() 
+**(super ile return eden herşeyi alıyorum, dönen bütün fieldları değişkene atadım)**
+        request = self.context.get('request')
+**context ile request objesine ulaşıyorum ve requesti yapanın kim olduğunu(user,staff?) anlıyorum**
+
+        if request.user and not request.user.is_staff: 
+**(request user var ve staff değilse)**
+            fields.pop('availability')
+            fields.pop('plate_number')
+**availability ve plate_number'ı çıkar**
+        return fields
+**değilse hepsini dön**
+
+**Şimdi ReservationSerializer yazmaya başlıyorum**
+
+class ReservationSerializer(serializers.ModelSerializer):
+    total_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Reservation
+        fields = (
+            'id',
+            'customer',
+            'car',
+            'start_date',
+            'end_date',
+            'total_price'
+        )
+**db'ye gelmeden önce customer, start ve end datelerin validation işlemini yapmam gerekiyor. validators gönderilen bütün datayı validate ediyor.**
+        validators = [
+            serializers.UniqueTogetherValidator(
+**unique'liği hangi tabloda arayacağım? Bütün reservation tablosuna git**
+                queryset=Reservation.objects.all(),
+**hangi fieldlar unique olacak?**
+                fields=('customer', 'start_date', 'end_date'),
+**validation sonrası dönmesini istediğim mesaj**
+                message=('You already have a reservation between these dates...')
+            )
+        ]
+
+    def get_total_price(self, obj):
+        return obj.car.rent_per_day * (obj.end_date - obj.start_date).days
+
+**viewde concrete view kullanacağım**
+
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from .serializers import CarSerializer, ReservationSerializer
+
+**ListCreateAPIView'den inherit ediyorum**
+class ReservationView(ListCreateAPIView):
+    queryset = Reservation.objects.all()
+    serializer_class = ReservationSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return super().get_queryset()
+        return super().get_queryset().filter(customer=self.request.user)
+
+class ReservationDetailView(RetrieveUpdateDestroyAPIView):
+    queryset = Reservation.objects.all()
+    serializer_class = ReservationSerializer
+    # lookup_field = 'id'
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        end = serializer.validated_data.get('end_date')
+        car = serializer.validated_data.get('car')
+        start = instance.start_date
+        today = timezone.now().date()
+        if Reservation.objects.filter(car=car).exists():
+            # a = Reservation.objects.filter(car=car, start_date__gte=today)
+            # print(len(a))
+            for res in Reservation.objects.filter(car=car, end_date__gte=today):
+                if start < res.start_date < end:
+                    return Response({'message': 'Car is not available...'})
+
+        return super().update(request, *args, **kwargs)
+
+**url'de endpointleri yazıyorum**
+from .views import CarView, ReservationView, ReservationDetailView
+**bu modelviewset olmadığı için path yazıyorum**
+urlpatterns = [
+**classbased view olduğu için as_view yazıyorum**
+    path('reservation/', ReservationView.as_view()),
+    path('reservation/<int:pk>/', ReservationDetailView.as_view())
+]
 
        
 

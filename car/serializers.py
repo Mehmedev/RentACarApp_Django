@@ -60,7 +60,7 @@ class ReservationSerializer(serializers.ModelSerializer):
             serializers.UniqueTogetherValidator(
                 queryset=Reservation.objects.all(),
                 fields=('customer', 'start_date', 'end_date'),
-                message=('You alreday have a reservation between these dates...')
+                message=('You already have a reservation between these dates...')
             )
         ]
 
