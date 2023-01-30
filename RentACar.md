@@ -274,6 +274,7 @@ urlpatterns += router.urls
 **Şimdi ReservationSerializer yazmaya başlıyorum**
 
 class ReservationSerializer(serializers.ModelSerializer):
+**kullanıcı ne kadar ödeme yapacağını da görsün**
     total_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -297,7 +298,7 @@ class ReservationSerializer(serializers.ModelSerializer):
                 message=('You already have a reservation between these dates...')
             )
         ]
-
+**toplam ödemeyi hesaplayan fonks.**
     def get_total_price(self, obj):
         return obj.car.rent_per_day * (obj.end_date - obj.start_date).days
 
@@ -305,41 +306,48 @@ class ReservationSerializer(serializers.ModelSerializer):
 
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from .serializers import CarSerializer, ReservationSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 **ListCreateAPIView'den inherit ediyorum**
 class ReservationView(ListCreateAPIView):
     queryset = Reservation.objects.all()
     serializer_class = ReservationSerializer
     permission_classes = (IsAuthenticated,)
+**authenticated ise reservation yapabilsin,değilse login sayfasına yönlendireceğim**
 
     def get_queryset(self):
+**admin tüm reservationları görsün, normal user sadece kendilerinkini**
         if self.request.user.is_staff:
             return super().get_queryset()
         return super().get_queryset().filter(customer=self.request.user)
 
+**detail gerektiren işlemler için yeni bir view oluşturuyorum**
+**update'de sadece end date için izin vereceğiz, uzatırken de araç müsait mi diye kontrol edeceğiz**
 class ReservationDetailView(RetrieveUpdateDestroyAPIView):
     queryset = Reservation.objects.all()
     serializer_class = ReservationSerializer
-    # lookup_field = 'id'
-
+    # lookup_field = 'id' **deseydim urlsde pk yerine id yazabilirdim.**
+**RetrieveUpdateDestroyAPIView tıkladım sonra da UpdateModelMixin tıklarak def update modelini aldım**
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(
+        partial = kwargs.pop('partial', False) **partial update için gerekli**
+        instance = self.get_object() **hangi obje olduğunu buradan alıyor**
+        serializer = self.get_serializer(  **patch işlemi için serializer tanımlıyor**
             instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        end = serializer.validated_data.get('end_date')
-        car = serializer.validated_data.get('car')
+        serializer.is_valid(raise_exception=True) **if ile uzun yazdığım condition burası yani validse return serializer datayı dön, değilse hata dön**
+        end = serializer.validated_data.get('end_date') **update için gönderdiği end date'i burada yakalıyorum**
+        car = serializer.validated_data.get('car') **hangi car olduğunu çekiyorum**
         start = instance.start_date
         today = timezone.now().date()
-        if Reservation.objects.filter(car=car).exists():
+        if Reservation.objects.filter(car=car).exists(): **o araba için res var mı?**
             # a = Reservation.objects.filter(car=car, start_date__gte=today)
             # print(len(a))
-            for res in Reservation.objects.filter(car=car, end_date__gte=today):
+**bu cara ait resler içerisinde dolan diyorum**
+            for res in Reservation.objects.filter(car=car, end_date__gte=today): 
                 if start < res.start_date < end:
-                    return Response({'message': 'Car is not available...'})
-
-        return super().update(request, *args, **kwargs)
+                    return Response({'message': 'Car is not available...'}) **response'u import ettim**
+**if'e girmezse update metodunun response'unu dön diyorum**
+        return super().update(request, *args, **kwargs) 
 
 **url'de endpointleri yazıyorum**
 from .views import CarView, ReservationView, ReservationDetailView
@@ -347,7 +355,8 @@ from .views import CarView, ReservationView, ReservationDetailView
 urlpatterns = [
 **classbased view olduğu için as_view yazıyorum**
     path('reservation/', ReservationView.as_view()),
-    path('reservation/<int:pk>/', ReservationDetailView.as_view())
+    path('reservation/<int:pk>/', ReservationDetailView.as_view()) 
+    **view'de lookup field yazmadığım için burada pk kullandım**
 ]
 
        
