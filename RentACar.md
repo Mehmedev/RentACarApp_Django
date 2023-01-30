@@ -208,7 +208,7 @@ class CarView(ModelViewSet):
 
         return queryset
 
-**BİLGİ NOTU**
+**MİNİ BİLGİ NOTU**
 Django, filter() metodunda birçok kıyaslama operatörü sunmaktadır. Örnek olarak:
 exact: esitliği kontrol eder.
 iexact: case-insensitive esitliği kontrol eder.
@@ -219,7 +219,7 @@ gte: büyüklük veya eşitlik karşılaştırması yapar.
 lt: küçüklük karşılaştırması yapar.
 lte: küçüklük veya eşitlik karşılaştırması yapar.
 in: belirli bir liste içinde arama yapar.
-**BİLGİ NOTU SON**
+**MİNİ BİLGİ NOTU SONU**
 
 ***permissions.py***
 
@@ -309,6 +309,8 @@ from .serializers import CarSerializer, ReservationSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.utils import timezone
+
 **ListCreateAPIView'den inherit ediyorum**
 class ReservationView(ListCreateAPIView):
     queryset = Reservation.objects.all()
@@ -337,14 +339,14 @@ class ReservationDetailView(RetrieveUpdateDestroyAPIView):
         serializer.is_valid(raise_exception=True) **if ile uzun yazdığım condition burası yani validse return serializer datayı dön, değilse hata dön**
         end = serializer.validated_data.get('end_date') **update için gönderdiği end date'i burada yakalıyorum**
         car = serializer.validated_data.get('car') **hangi car olduğunu çekiyorum**
-        start = instance.start_date
-        today = timezone.now().date()
+        start = instance.start_date **instancedan start date'i yakalayarak, start'a tanımladım**
+        today = timezone.now().date() **timezone import ettim**
         if Reservation.objects.filter(car=car).exists(): **o araba için res var mı?**
-            # a = Reservation.objects.filter(car=car, start_date__gte=today)
+            # a = Reservation.objects.filter(car=car, start_date__gte=today) **test için yaptım**
             # print(len(a))
 **bu cara ait resler içerisinde dolan diyorum**
-            for res in Reservation.objects.filter(car=car, end_date__gte=today): 
-                if start < res.start_date < end:
+            for res in Reservation.objects.filter(car=car, end_date__gte=today): **end date'i bugünden eski olanları göstermeyecek**
+                if start < res.start_date < end: **res uzatma için bu şartı sağlamalı**
                     return Response({'message': 'Car is not available...'}) **response'u import ettim**
 **if'e girmezse update metodunun response'unu dön diyorum**
         return super().update(request, *args, **kwargs) 
@@ -358,7 +360,37 @@ urlpatterns = [
     path('reservation/<int:pk>/', ReservationDetailView.as_view()) 
     **view'de lookup field yazmadığım için burada pk kullandım**
 ]
+**Models'a gelerek reserve edilen araç ile ilgili bilgi görünümünü güncelledik**
+def __str__(self):
+        return f"Customer {self.customer} reserved {self.car} {self.start_date} - {self.end_date}"
 
+
+**şimdi de her ne kadar araç kiralama sitelerinde pek kullanılmasa da uygun olmayan araçları müsait değil şeklinde gösterme kodunu yazıyorum**
+
+
+**Öncelikle serializera is_available'ı ekliyoruz.**
+
+class CarSerializer(serializers.ModelSerializer):
+    is_available = serializers.BooleanField() **ürettiğim is_available fieldı boolean değer dönecek diyorum**
+    class Meta:...
+        ...
+        ...
+        'is_available'
+
+**annotate ile belli conditionlara göre her field için dinamik olarak o koşulun karşılığı ne ise onu gösterir. örneğin bu projede arabaların available olup olmadıklarını seçili tarihe göre dinamik olarak gösterecek. bu db'de gösterilmez. Modelde düzenlemiyoruz. Endpointlerde çalışır. Serializerda düzenleyeceğiz.**
+
+  queryset = queryset.annotate(
+                    is_available=~Exists(Reservation.objects.filter( **~ işareti django'da yaptığın işlemi tersine çevirir**
+                    Q(car=OuterRef('pk')) & Q(  **outerRef bir üst tabloyu gösteriyor**
+                        start_date__lt=end) & Q(end_date__gt=start)
+                ))
+            )
+
+        return queryset
+
+**viewde de annotate'de kullanacağım Exists ve OuterRef metotlarını import ettim**
+
+from django.db.models import Q, Exists, OuterRef
        
 
 
